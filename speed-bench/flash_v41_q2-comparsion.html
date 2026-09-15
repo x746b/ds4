@@ -1,0 +1,485 @@
+<title>DwarfStar Prefill Benchmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-sunk: #eef1f5;
+    --text-primary: #14171c;
+    --text-secondary: #4a5260;
+    --text-muted: #79818f;
+    --border: #e2e5ea;
+    --border-strong: #cdd3dc;
+    --grid: #e8ebf0;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --accent-soft: rgba(42, 120, 214, 0.09);
+
+    --step--1: 0.8125rem;
+    --step-0: 0.9375rem;
+    --step-1: 1.0625rem;
+    --step-2: 1.375rem;
+    --step-3: 1.875rem;
+    --step-4: 2.5rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #14161a;
+      --surface: #1c1f24;
+      --surface-sunk: #24282e;
+      --text-primary: #ffffff;
+      --text-secondary: #c2c7d0;
+      --text-muted: #8b93a0;
+      --border: #2c3138;
+      --border-strong: #3a4048;
+      --grid: #272c33;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --accent-soft: rgba(57, 135, 229, 0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #14161a;
+    --surface: #1c1f24;
+    --surface-sunk: #24282e;
+    --text-primary: #ffffff;
+    --text-secondary: #c2c7d0;
+    --text-muted: #8b93a0;
+    --border: #2c3138;
+    --border-strong: #3a4048;
+    --grid: #272c33;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --accent-soft: rgba(57, 135, 229, 0.14);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: var(--step-0);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin-inline: auto;
+    padding-inline: 20px;
+    padding-block: 48px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 44px;
+  }
+  h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.2; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  h1 { font-size: var(--step-4); font-weight: 600; letter-spacing: -0.02em; }
+  h2 { font-size: var(--step-2); font-weight: 600; letter-spacing: -0.01em; }
+  h3 { font-size: var(--step-1); font-weight: 600; }
+  p { margin: 0; max-width: 68ch; color: var(--text-secondary); }
+  .lede { font-size: var(--step-1); color: var(--text-secondary); max-width: 64ch; }
+  strong { color: var(--text-primary); font-weight: 600; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  code {
+    font-size: 0.9em;
+    background: var(--surface-sunk);
+    padding: 0.12em 0.36em;
+    border-radius: 3px;
+    color: var(--text-primary);
+  }
+
+  header { display: flex; flex-direction: column; gap: 14px; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step--1);
+    color: var(--text-muted);
+    padding-top: 6px;
+  }
+
+  /* Finding — the one lifted element on the page */
+  .finding {
+    border-left: 3px solid var(--series-3);
+    background: var(--surface);
+    border-radius: 0 6px 6px 0;
+    padding: 24px 26px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .ratios { display: flex; flex-wrap: wrap; gap: 32px; padding-top: 4px; }
+  .ratio { display: flex; flex-direction: column; gap: 2px; }
+  .ratio b {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: var(--step-3); font-weight: 600; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .ratio span { font-size: var(--step--1); color: var(--text-muted); }
+  .r1 b { color: var(--series-2); }
+  .r2 b { color: var(--series-3); }
+  .r3 b { color: var(--series-1); }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+
+  .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+  figure {
+    margin: 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 18px 16px 12px;
+    display: flex; flex-direction: column; gap: 4px; position: relative;
+  }
+  figcaption { display: flex; flex-direction: column; gap: 2px; padding-inline: 4px; }
+  figcaption .t { font-weight: 600; font-size: var(--step-0); color: var(--text-primary); }
+  figcaption .s { font-size: var(--step--1); color: var(--text-muted); }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .axis-line { stroke: var(--border-strong); stroke-width: 1; }
+  .tick { fill: var(--text-muted); font-size: 10px; font-family: "IBM Plex Mono", monospace; }
+  .axis-title { fill: var(--text-muted); font-size: 10px; font-family: "IBM Plex Mono", monospace; letter-spacing: 0.06em; }
+  .s1 { stroke: var(--series-1); }
+  .s2 { stroke: var(--series-2); }
+  .s3 { stroke: var(--series-3); }
+  .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .dot1 { fill: var(--series-1); }
+  .dot2 { fill: var(--series-2); }
+  .dot3 { fill: var(--series-3); }
+  .dot { stroke: var(--surface); stroke-width: 2; }
+  .hit { fill: transparent; cursor: pointer; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 2px 4px 0; }
+  .lg { display: flex; align-items: center; gap: 7px; font-size: var(--step--1); color: var(--text-secondary); }
+  .sw { width: 13px; height: 3px; border-radius: 2px; flex: none; }
+
+  .tip {
+    position: absolute; pointer-events: none; opacity: 0;
+    transition: opacity .12s ease;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: 6px; padding: 7px 10px;
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; line-height: 1.5;
+    color: var(--text-primary); white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,.14); z-index: 5;
+    font-variant-numeric: tabular-nums;
+  }
+  .tip.on { opacity: 1; }
+  .tip b { display: block; color: var(--text-muted); font-weight: 500; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--step--1); }
+  th, td { padding: 9px 14px; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace; font-weight: 500; font-size: 11px;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  tbody td { border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: "IBM Plex Mono", monospace; }
+  .pen { font-weight: 600; }
+  .grp td { background: var(--surface-sunk); font-weight: 600; color: var(--text-primary); text-align: left; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-family: "IBM Plex Mono", monospace; }
+
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+  .note { display: flex; flex-direction: column; gap: 7px; }
+  .note h3 { font-size: var(--step-0); }
+  .note p { font-size: var(--step--1); line-height: 1.62; }
+  .caveats { border-top: 1px solid var(--border); padding-top: 22px; }
+  .caveats ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 9px; }
+  .caveats li { color: var(--text-secondary); font-size: var(--step--1); line-height: 1.6; }
+  .caveats li::marker { color: var(--text-muted); }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">DwarfStar · DeepSeek V4.1 Flash Q2 · Apple M5 Max 128 GB</p>
+    <h1>Prefill is bound by chunk fill, not by SSD streaming</h1>
+    <p class="lede">
+      Streaming a 341 GiB model off SSD looks catastrophic for prompt processing — until the
+      prefill chunks are actually full. The same model, same flags, measured at 2048-token
+      versus 8192-token increments, differs by 3–4× on prefill and not at all on generation.
+    </p>
+    <div class="meta">
+      <span>ds4-bench · Metal</span>
+      <span>expert cache 81.5–86.5 GiB</span>
+      <span>Engram disk-only</span>
+      <span>promessi_sposi.txt</span>
+    </div>
+  </header>
+
+  <div class="finding">
+    <h2>Streaming penalty vs. resident, at 8192 tokens of context</h2>
+    <p>
+      Measured against the recorded <code>ds4f-q2</code> resident baseline on the same machine.
+      The prefill penalty collapses from 8.5× to 1.7× purely by filling the chunk — the flag
+      alone does nothing.
+    </p>
+    <div class="ratios">
+      <div class="ratio r1"><b>8.5×</b><span>prefill · 2048-token increments</span></div>
+      <div class="ratio r2"><b>1.7×</b><span>prefill · 8192-token increments</span></div>
+      <div class="ratio r3"><b>2.2×</b><span>generation · both</span></div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Throughput across context frontiers</h2>
+    <p>
+      Two measures, two charts, one shared context scale — prefill and generation differ by an
+      order of magnitude and never share an axis. Generation uses <code>gen_steady_tps</code>,
+      which excludes the first-token wait.
+    </p>
+    <div class="legend" id="legend"></div>
+    <div class="charts">
+      <figure>
+        <figcaption>
+          <span class="t">Prefill</span>
+          <span class="s">tokens/sec · incremental interval at each frontier</span>
+        </figcaption>
+        <svg id="c1" viewBox="0 0 440 300" role="img" aria-label="Prefill throughput by context length"></svg>
+        <div class="tip" id="t1"></div>
+      </figure>
+      <figure>
+        <figcaption>
+          <span class="t">Generation</span>
+          <span class="s">tokens/sec · steady state, first token excluded</span>
+        </figcaption>
+        <svg id="c2" viewBox="0 0 440 300" role="img" aria-label="Generation throughput by context length"></svg>
+        <div class="tip" id="t2"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Measured data</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Context</th><th>Prefill t/s</th><th>Gen t/s (steady)</th>
+            <th>First token</th><th>vs. resident prefill</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why the chunk decides it</h2>
+    <div class="notes">
+      <div class="note">
+        <h3>Decode touches 6 experts. Prefill touches all 384.</h3>
+        <p>
+          V4.1 Flash routes 6 of 384 experts per layer per token. A prefill chunk takes the
+          union over every token in it, so a large chunk effectively touches all 384 per layer
+          — all 15,360 expert tensors, about 142 GiB, against an 81.5 GiB cache.
+        </p>
+      </div>
+      <div class="note">
+        <h3>That sweep is near-fixed per chunk.</h3>
+        <p>
+          Its cost barely depends on how many tokens ride along. Amortized over 2048 tokens it
+          is ruinous; over 8192 it is four times cheaper per token. Throughput therefore scales
+          with chunk fill, not with cache size.
+        </p>
+      </div>
+      <div class="note">
+        <h3>The flag is clamped by context.</h3>
+        <p>
+          <code>--prefill-chunk 8192</code> at <code>--ctx-max 8192</code> silently ran at 4096:
+          <code>prefill_cap</code> is bound by the context allocation. The control run proves the
+          flag alone changes nothing without the tokens to fill it.
+        </p>
+      </div>
+      <div class="note">
+        <h3>Big prefills poison the decode cache.</h3>
+        <p>
+          First-token latency after an 8192-token prefill runs 427–905 ms, against 121–148 ms
+          after a 2048-token one. The sweep evicts exactly the hot experts decode wants back.
+          Steady-state generation is unaffected.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="caveats">
+    <h2>What this does and doesn't establish</h2>
+    <ul>
+      <li>
+        The resident baseline is <strong>DeepSeek V4 Flash Q2</strong> (43 layers, 256 experts,
+        81 GiB, no Engram), not V4.1. Active footprint per token is close — ~1.94 GiB vs
+        ~2.22 GiB — so it is a fair proxy, but it is not the same checkpoint.
+      </li>
+      <li>
+        The 8192-increment run allocated a 32K context, leaving a <strong>smaller</strong> expert
+        cache (81.5 GiB / 8793 experts) than the 2048-increment run (86.5 GiB / 9332). It won by
+        3–4× despite that handicap, which strengthens rather than weakens the result.
+      </li>
+      <li>
+        Single runs, not medians. The docs' own methodology asks for alternating repeats before
+        calling anything a speed result.
+      </li>
+      <li>
+        A live <code>ds4-server</code> reported 216–296 t/s prefill on a 10k prompt at
+        <code>prefill_chunk=8192</code> — independently consistent with the 215–408 t/s measured here.
+      </li>
+    </ul>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  const PREFILL = {
+    base: [[2048,790.18],[4096,710.50],[6144,704.17],[8192,683.85],[16384,572.53],[24576,570.39],[32768,557.04]],
+    inc2: [[2048,129.88],[4096,83.52],[6144,76.37],[8192,80.88]],
+    inc8: [[8192,407.63],[16384,254.84],[24576,245.05],[32768,215.36]]
+  };
+  const GEN = {
+    base: [[2048,40.00],[4096,38.09],[6144,37.79],[8192,37.63],[16384,36.68],[24576,35.88],[32768,34.90]],
+    inc2: [[2048,17.27],[4096,16.71],[6144,16.90],[8192,17.35]],
+    inc8: [[8192,15.83],[16384,17.13],[24576,16.88],[32768,16.42]]
+  };
+  const SERIES = [
+    { key: "base", label: "V4 Flash Q2 — resident", cls: 1 },
+    { key: "inc2", label: "V4.1 Q2 streaming — 2048-token increments", cls: 2 },
+    { key: "inc8", label: "V4.1 Q2 streaming — 8192-token increments", cls: 3 }
+  ];
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+  const legend = document.getElementById("legend");
+  SERIES.forEach(s => {
+    const d = document.createElement("div");
+    d.className = "lg";
+    const sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = "var(--series-" + s.cls + ")";
+    d.appendChild(sw);
+    d.appendChild(document.createTextNode(s.label));
+    legend.appendChild(d);
+  });
+
+  const X_MAX = 32768;
+  const X_TICKS = [0, 8192, 16384, 24576, 32768];
+
+  function draw(svgId, tipId, data, yMax, yStep, unitLabel) {
+    const svg = document.getElementById(svgId);
+    const tip = document.getElementById(tipId);
+    const L = 44, R = 12, T = 12, B = 40;
+    const W = 440, H = 300;
+    const pw = W - L - R, ph = H - T - B;
+    const sx = v => L + (v / X_MAX) * pw;
+    const sy = v => T + ph - (v / yMax) * ph;
+
+    for (let v = 0; v <= yMax; v += yStep) {
+      svg.appendChild(el("line", { class: "grid-line", x1: L, y1: sy(v), x2: L + pw, y2: sy(v) }));
+      const t = el("text", { class: "tick", x: L - 8, y: sy(v) + 3.5, "text-anchor": "end" });
+      t.textContent = v;
+      svg.appendChild(t);
+    }
+    svg.appendChild(el("line", { class: "axis-line", x1: L, y1: T, x2: L, y2: T + ph }));
+    svg.appendChild(el("line", { class: "axis-line", x1: L, y1: T + ph, x2: L + pw, y2: T + ph }));
+
+    X_TICKS.forEach(v => {
+      const t = el("text", { class: "tick", x: sx(v), y: T + ph + 16, "text-anchor": "middle" });
+      t.textContent = v >= 1024 ? (v / 1024) + "k" : v;
+      svg.appendChild(t);
+    });
+    const ax = el("text", { class: "axis-title", x: L + pw / 2, y: H - 6, "text-anchor": "middle" });
+    ax.textContent = "CONTEXT TOKENS";
+    svg.appendChild(ax);
+    const ay = el("text", { class: "axis-title", x: 0, y: 0, "text-anchor": "middle",
+      transform: "translate(11," + (T + ph / 2) + ") rotate(-90)" });
+    ay.textContent = unitLabel;
+    svg.appendChild(ay);
+
+    SERIES.forEach(s => {
+      const pts = data[s.key];
+      svg.appendChild(el("polyline", {
+        class: "line s" + s.cls,
+        points: pts.map(p => sx(p[0]) + "," + sy(p[1])).join(" ")
+      }));
+    });
+
+    SERIES.forEach(s => {
+      data[s.key].forEach(p => {
+        svg.appendChild(el("circle", { class: "dot dot" + s.cls, cx: sx(p[0]), cy: sy(p[1]), r: 4 }));
+        const hit = el("circle", { class: "hit", cx: sx(p[0]), cy: sy(p[1]), r: 13 });
+        const show = () => {
+          tip.innerHTML = "<b>" + s.label + "</b>" + p[1].toFixed(2) + " t/s @ " + p[0].toLocaleString() + " ctx";
+          tip.classList.add("on");
+          const fx = (sx(p[0]) / W) * 100;
+          tip.style.left = "calc(" + fx + "% - " + (fx > 62 ? 150 : -14) + "px)";
+          tip.style.top = ((sy(p[1]) / H) * 100) + "%";
+        };
+        hit.addEventListener("mouseenter", show);
+        hit.addEventListener("focus", show);
+        hit.addEventListener("mouseleave", () => tip.classList.remove("on"));
+        hit.addEventListener("blur", () => tip.classList.remove("on"));
+        hit.setAttribute("tabindex", "0");
+        svg.appendChild(hit);
+      });
+    });
+  }
+
+  draw("c1", "t1", PREFILL, 800, 200, "TOKENS / SEC");
+  draw("c2", "t2", GEN, 40, 10, "TOKENS / SEC");
+
+  // Table
+  const ROWS = [
+    ["grp", "V4.1 Q2 streaming — 2048-token increments"],
+    ["d", 2048, 129.88, 17.27, "904.98", 6.1],
+    ["d", 4096, 83.52, 16.71, "139.32", 8.5],
+    ["d", 6144, 76.37, 16.90, "140.07", 9.2],
+    ["d", 8192, 80.88, 17.35, "135.88", 8.5],
+    ["grp", "V4.1 Q2 streaming — 8192-token increments"],
+    ["d", 8192, 407.63, 15.83, "904.76", 1.7],
+    ["d", 16384, 254.84, 17.13, "736.34", 2.2],
+    ["d", 24576, 245.05, 16.88, "892.05", 2.3],
+    ["d", 32768, 215.36, 16.42, "427.38", 2.6],
+    ["grp", "V4 Flash Q2 — resident baseline"],
+    ["b", 2048, 790.18, 40.00, "26.95", null],
+    ["b", 8192, 683.85, 37.63, "30.10", null],
+    ["b", 16384, 572.53, 36.68, "28.54", null],
+    ["b", 32768, 557.04, 34.90, "35.69", null]
+  ];
+  const tb = document.getElementById("tbody");
+  ROWS.forEach(r => {
+    const tr = document.createElement("tr");
+    if (r[0] === "grp") {
+      tr.className = "grp";
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.textContent = r[1];
+      tr.appendChild(td);
+    } else {
+      const cells = [
+        r[1].toLocaleString(),
+        r[2].toFixed(2),
+        r[3].toFixed(2),
+        r[4] + " ms",
+        r[5] === null ? "—" : r[5].toFixed(1) + "×"
+      ];
+      cells.forEach((c, i) => {
+        const td = document.createElement("td");
+        td.textContent = c;
+        if (i > 0) td.className = "num" + (i === 4 && r[5] !== null ? " pen" : "");
+        tr.appendChild(td);
+      });
+    }
+    tb.appendChild(tr);
+  });
+})();
+</script>

@@ -4,7 +4,8 @@
 
 Measured 2026-09-15 on an Apple M5 Max, 128 GB, Metal build.
 
-Interactive charts for these runs:
+Interactive charts for these runs: [`flash_v41_q2-comparsion.html`](flash_v41_q2-comparsion.html)
+(self-contained; open it locally in a browser), also published at
 https://claude.ai/artifact/5DhtQRrQyVqffbWQ4AbsP1
 
 ## Why this comparison exists
