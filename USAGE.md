@@ -36,24 +36,30 @@ Each takes `--help`. `ds4-server` also has topic pages:
 
 ## Start the server
 
-The working configuration for this box:
+The recommended configuration for this box, tuned against the measurements in
+[Measured tuning](#measured-tuning-m5-max-128-gb-v41-q2-ssd-streaming):
 
 ```sh
 ./ds4-server \
   -m "$MODEL" \
   --ssd-streaming \
   --ctx 32768 \
-  --kv-disk-dir ~/.ds4/server-kv --kv-disk-space-mb 8192
+  --prefill-chunk 8192 \
+  --kv-disk-dir ~/.ds4/server-kv --kv-disk-space-mb 32768
 ```
 
 Listens on `http://127.0.0.1:8000`. Startup is ~2 s — SSD streaming skips full
 residency and warmup.
 
+`--prefill-chunk 8192` is the single highest-impact flag here: without it, long
+prompts fall back to 4096-token chunks and prefill drops by 3-4x. `--ctx 32768`
+is what allows an 8192 chunk to be allocated at all.
+
 Run it detached with a log:
 
 ```sh
-./ds4-server -m "$MODEL" --ssd-streaming --ctx 32768 \
-  --kv-disk-dir ~/.ds4/server-kv --kv-disk-space-mb 8192 \
+./ds4-server -m "$MODEL" --ssd-streaming --ctx 32768 --prefill-chunk 8192 \
+  --kv-disk-dir ~/.ds4/server-kv --kv-disk-space-mb 32768 \
   > /tmp/ds4-server.log 2>&1 &
 ```
 
@@ -244,8 +250,8 @@ resident.
 Speeds up repeated and continued prompts.
 
 ```sh
-./ds4-server -m "$MODEL" --ssd-streaming --ctx 32768 \
-  --kv-disk-dir ~/.ds4/server-kv --kv-disk-space-mb 8192
+./ds4-server -m "$MODEL" --ssd-streaming --ctx 32768 --prefill-chunk 8192 \
+  --kv-disk-dir ~/.ds4/server-kv --kv-disk-space-mb 32768
 ```
 
 | Flag | Default | Effect |
@@ -282,6 +288,103 @@ Disabling the memory guard is not a remedy for insufficient RAM.
 drop `--batched-session`. More context and more sessions cost more memory.
 
 ---
+
+## Benchmarking
+
+`ds4-bench` runs inference directly — no server — and sweeps context frontiers,
+measuring prefill and generation at each. It takes the same global `/tmp/ds4.lock`,
+so **stop `ds4-server` first**.
+
+At each frontier it prefills only the newly added interval, greedy-decodes N
+tokens, records KV size, then restores a memory snapshot so frontiers stay
+independent. If a snapshot exceeds the memory limit it falls back to prefix
+replay — do not read replay time as continued-prefill speed.
+
+### Standard sweep
+
+The repo corpus makes runs comparable across machines:
+
+```sh
+./ds4-bench \
+  -m "$MODEL" \
+  --ssd-streaming --prefill-chunk 8192 \
+  --prompt-file speed-bench/promessi_sposi.txt \
+  --ctx-start 8192 --ctx-max 32768 --step-incr 8192 --gen-tokens 64 \
+  --csv speed-bench/my_run.csv
+```
+
+**Set `--step-incr` to your chunk size.** Prefill cost is near-fixed per chunk,
+so small increments measure a worst case: the same model scored 59-130 t/s at
+2048-token increments and 215-408 t/s at 8192. See
+[the comparison note](speed-bench/flash_v41_q2-comparsion.md).
+
+### Quick check
+
+Four frontiers, a few minutes:
+
+```sh
+./ds4-bench -m "$MODEL" --ssd-streaming \
+  --prompt-file speed-bench/promessi_sposi.txt \
+  --ctx-start 2048 --ctx-max 8192 --step-incr 2048 --gen-tokens 64 \
+  --csv /tmp/quick.csv
+```
+
+### Prefill only
+
+```sh
+./ds4-bench -m "$MODEL" --ssd-streaming --prefill-chunk 8192 \
+  --prompt-file speed-bench/promessi_sposi.txt \
+  --ctx-start 8192 --ctx-max 32768 --step-incr 8192 --gen-tokens 0 \
+  --csv /tmp/prefill_only.csv
+```
+
+### Sweep flags
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--ctx-start N` | 2048 | First frontier |
+| `--ctx-max N` | 32768 | Last frontier |
+| `--step-incr N` | 2048 | Linear step; match it to the prefill chunk |
+| `--step-mul F` | 1 | Exponential spacing instead |
+| `--gen-tokens N` | 128 | Decode tokens per frontier; 0 for pure prefill |
+| `--ctx-alloc N` | ctx-max + gen + 1 | Allocated context |
+| `--teacher-forced-decode` | off | Decode real next tokens instead of argmax |
+| `--chat-prompt-file FILE` | — | Render the file as one no-thinking chat message |
+| `--csv FILE` | stdout | Output destination |
+
+Runtime flags mirror `ds4-server`, so streaming and resident runs A/B with one
+harness.
+
+### Reading the CSV
+
+```csv
+ctx_tokens,prefill_tokens,prefill_tps,gen_tokens,gen_tps,gen_first_ms,gen_steady_tokens,gen_steady_tps,kvcache_bytes
+```
+
+`gen_tps` **includes** the first-token wait; `gen_steady_tps` excludes it. Under
+SSD streaming that gap is wide — a long prefill evicts decode's hot experts, so
+the first token can cost 427-905 ms. Quote `gen_steady_tps` when comparing
+against engines that report steady-state figures.
+
+The schema records no model or mode, so name files accordingly — `m5_max.csv`
+alone does not say what ran.
+
+### Charting
+
+```sh
+python3 speed-bench/plot_speed.py speed-bench/my_run.csv --title "My run t/s"
+```
+
+Standard library only. Writes `<name>_ts.svg` beside the CSV, plotting
+`prefill_tps` and `gen_tps` (not `gen_steady_tps`) on separate axes.
+
+### Method
+
+Compare the same checkpoint, quantization, context and sampling. Record the
+commit and whether weights were resident, streamed or distributed. Keep other
+GPU work idle and repeat in alternating order — one favorable run is not a
+speed result.
+
 
 ## Measured tuning (M5 Max 128 GB, V4.1 Q2 SSD streaming)
 
