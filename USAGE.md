@@ -13,7 +13,7 @@ Shorthand used below:
 MODEL=~/AI/models/pyrodog_DeepSeek-V4.1-Flash-UNCENSORED-DwarfStar-Q2/DeepSeek-V4.1-Flash-UNCENSORED-Q2-bootstrap.gguf
 ```
 
-Run commands from `/Users/xtk/opt/ds4` (or pass `--chdir /Users/xtk/opt/ds4`)
+Run commands from the repository root (or pass `--chdir /path/to/ds4`)
 so the Metal kernels resolve.
 
 ---
@@ -294,7 +294,6 @@ Benchmarked 2026-09-15. Raw data and charts:
 | `speed-bench/m5_max_v41_q2_stream_incr*_ts.svg` | Rendered charts |
 | `speed-bench/m5_max.csv` | Repo's resident V4 Flash Q2 baseline |
 
-Report: https://claude.ai/artifact/5DhtQRrQyVqffbWQ4AbsP1
 
 ### Headline
 
