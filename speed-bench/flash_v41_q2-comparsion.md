@@ -4,6 +4,9 @@
 
 Measured 2026-09-15 on an Apple M5 Max, 128 GB, Metal build.
 
+Interactive charts for these runs:
+https://claude.ai/artifact/5DhtQRrQyVqffbWQ4AbsP1
+
 ## Why this comparison exists
 
 `speed-bench/m5_max.csv` records a **resident** baseline for **DeepSeek V4 Flash
