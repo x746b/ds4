@@ -103,6 +103,75 @@ Generation figures are `gen_steady_tps`, which excludes the first-token wait.
 | 16384 | 572.53 | 36.68 |
 | 32768 | 557.04 | 34.90 |
 
+## Update 2026-09-21: after rebuilding on a newer engine
+
+Rebuilt from a merge of upstream at `bd5fe69` (64 commits past the binaries the
+numbers above were taken with) and re-ran the identical 8192-increment sweep.
+`kvcache_bytes` matched at every frontier, so the runs are directly comparable.
+
+| ctx | Prefill before | after | Gen before | after | First token before | after |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8192 | 407.63 | **428.72** | 15.83 | **16.85** | 904.8 ms | **786.1 ms** |
+| 16384 | 254.84 | **381.39** | 17.13 | **18.40** | 736.3 ms | **685.0 ms** |
+| 24576 | 245.05 | **287.12** | 16.88 | **18.80** | 892.1 ms | **787.4 ms** |
+| 32768 | 215.36 | **302.68** | 16.42 | **18.41** | 427.4 ms | **376.3 ms** |
+
+Decode gained 6 - 12 %, first-token latency fell 7 - 13 %, and prefill gained
+5 - 50 %.
+
+Two separate causes:
+
+- **Decode and first token: the Engram reader.** `ds4_engram.c` gated its
+  concurrent path behind 256 rows, but single-token decode asks for
+  `DS4_ENGRAM_COLS` (24) rows per table, so it never qualified and paid full
+  random-read latency on every row, in series. The Apple threshold is now 8.
+  The gain grows with context, which fits: longer contexts spend proportionally
+  more time in the per-token path.
+- **Prefill: Metal tiling.** Engram cannot explain a 50 % prefill gain. Two
+  commits in the same range rework prefill tile selection ("Keep prefill chunks
+  on the generic F16 tile", "Count a prefill chunk's token tiles in the k-split
+  rule"), and the uneven per-frontier gains look like tile thresholds landing
+  differently per shape.
+
+The worst case improved most: at 32K the penalty against the resident V4 Flash
+baseline falls from 2.6x to 1.8x.
+
+Data: `m5_max_v41_q2_stream_incr8k_rebuild.csv`.
+
+### GLM 5.3 Flash Q2, resident, for contrast
+
+Same harness, same machine, same 8192-token increments
+(`m5_max_glm53_q2_resident.csv`):
+
+| ctx | Prefill t/s | Gen t/s | First token |
+| ---: | ---: | ---: | ---: |
+| 8192 | 442.02 | 29.87 | 99.4 ms |
+| 16384 | 381.68 | 29.63 | **34.6 ms** |
+| 24576 | 373.58 | 29.47 | **34.4 ms** |
+| 32768 | 376.03 | 29.31 | **34.7 ms** |
+
+Three things separate it from streamed V4.1:
+
+- **First token is ~34 ms against 376 - 786 ms.** That gap is the disk tier
+  expressed as latency: V4.1 must fetch Engram rows and missing experts before
+  it can emit anything. For interactive work this matters more than throughput.
+- **Decode is flat**: -1.9 % from 8K to 32K, against -7 % for the resident V4
+  Flash baseline over the same range. Compact DSA attention earning its keep.
+- **KV snapshots are ~5.5x larger** - 349 MB at 8K against V4.1's 63 MB, rising
+  to 742 MB at 24K. A given `--kv-disk-space-mb` budget therefore holds far
+  fewer GLM sessions; watch for `reason=evict` in the server log.
+
+GLM is 320B/18B-active resident against V4.1's 763B streamed, so this is not a
+like-for-like model comparison - it is a comparison of two tiering strategies
+on one machine.
+
+![ds4 on M5 Max 128 GB](m5_max_ds4_comparison.png)
+
+Chart built with `plot_compare.py`, which stacks prefill and generation as
+separate panels over a shared x axis. `plot_speed.py` overlays them on two y
+axes; that is fine on screen but becomes misleading the moment the image is
+cropped, because the right-hand scale can disappear while its line stays.
+
 ## Why chunk fill decides prefill
 
 V4.1 selects 6 of 384 routed experts per layer per token. Decode therefore
