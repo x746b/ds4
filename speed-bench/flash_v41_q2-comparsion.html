@@ -215,6 +215,7 @@
       <span>expert cache 81.5–86.5 GiB</span>
       <span>Engram disk-only</span>
       <span>promessi_sposi.txt</span>
+      <span>updated 21 Sep 2026 · rebuild + GLM 5.3</span>
     </div>
   </header>
 
@@ -308,6 +309,77 @@
           First-token latency after an 8192-token prefill runs 427–905 ms, against 121–148 ms
           after a 2048-token one. The sweep evicts exactly the hot experts decode wants back.
           Steady-state generation is unaffected.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Update · 21 September 2026</p>
+    <h2>Rebuilt on a newer engine, and GLM 5.3 for contrast</h2>
+    <p>
+      Rebuilt from upstream at <code>bd5fe69</code> — 64 commits past the binaries above — and
+      re-ran the identical 8192-increment sweep. <code>kvcache_bytes</code> matched at every
+      frontier, so the runs compare directly.
+    </p>
+    <div class="ratios">
+      <div class="ratio r2"><b>+6–12%</b><span>generation, after rebuild</span></div>
+      <div class="ratio r1"><b>+5–50%</b><span>prefill, after rebuild</span></div>
+      <div class="ratio r3"><b>−7–13%</b><span>first-token latency</span></div>
+    </div>
+    <div class="legend" id="legend2"></div>
+    <div class="charts">
+      <figure>
+        <figcaption>
+          <span class="t">Prefill</span>
+          <span class="s">tokens/sec · 8192-token increments</span>
+        </figcaption>
+        <svg id="c3" viewBox="0 0 440 300" role="img" aria-label="Prefill before and after rebuild, with GLM"></svg>
+        <div class="tip" id="t3"></div>
+      </figure>
+      <figure>
+        <figcaption>
+          <span class="t">Generation</span>
+          <span class="s">tokens/sec · steady state</span>
+        </figcaption>
+        <svg id="c4" viewBox="0 0 440 300" role="img" aria-label="Generation before and after rebuild, with GLM"></svg>
+        <div class="tip" id="t4"></div>
+      </figure>
+    </div>
+    <div class="notes">
+      <div class="note">
+        <h3>Decode: the Engram reader was gated too high.</h3>
+        <p>
+          <code>ds4_engram.c</code> only used its concurrent path above 256 rows, but
+          single-token decode asks for 24 rows per table — so it never qualified and paid full
+          random-read latency on every row, in series. The Apple threshold is now 8. The gain
+          grows with context, which fits: longer contexts spend proportionally more time in
+          that per-token path.
+        </p>
+      </div>
+      <div class="note">
+        <h3>Prefill: Metal tiling, not Engram.</h3>
+        <p>
+          Engram cannot explain a 50% prefill gain. Two commits in the same range rework
+          prefill tile selection, and the uneven per-frontier gains look like tile thresholds
+          landing differently per shape. At 32K the penalty against the resident baseline falls
+          from 2.6× to 1.8×.
+        </p>
+      </div>
+      <div class="note">
+        <h3>GLM's first token is ~34 ms.</h3>
+        <p>
+          Against V4.1's 376–786 ms. That gap is the disk tier expressed as latency: V4.1 must
+          fetch Engram rows and missing experts before it can emit anything. For interactive
+          work this matters more than throughput.
+        </p>
+      </div>
+      <div class="note">
+        <h3>And GLM's decode is flat.</h3>
+        <p>
+          −1.9% from 8K to 32K, against −7% for the resident V4 Flash baseline over the same
+          range. Its KV snapshots are ~5.5× larger though, so a given
+          <code>--kv-disk-space-mb</code> budget holds far fewer sessions.
         </p>
       </div>
     </div>
@@ -437,6 +509,93 @@
   draw("c1", "t1", PREFILL, 800, 200, "TOKENS / SEC");
   draw("c2", "t2", GEN, 40, 10, "TOKENS / SEC");
 
+  // --- Update section: rebuild before/after, plus GLM -----------------------
+  const SERIES2 = [
+    { label: "V4.1 Q2 streaming — before rebuild", cls: 1,
+      pre: [[8192,407.63],[16384,254.84],[24576,245.05],[32768,215.36]],
+      gen: [[8192,15.83],[16384,17.13],[24576,16.88],[32768,16.42]] },
+    { label: "V4.1 Q2 streaming — after rebuild", cls: 2,
+      pre: [[8192,428.72],[16384,381.39],[24576,287.12],[32768,302.68]],
+      gen: [[8192,16.85],[16384,18.40],[24576,18.80],[32768,18.41]] },
+    { label: "GLM 5.3 Q2 — resident", cls: 3,
+      pre: [[8192,442.02],[16384,381.68],[24576,373.58],[32768,376.03]],
+      gen: [[8192,29.87],[16384,29.63],[24576,29.47],[32768,29.31]] }
+  ];
+
+  const legend2 = document.getElementById("legend2");
+  SERIES2.forEach(s => {
+    const d = document.createElement("div");
+    d.className = "lg";
+    const sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = "var(--series-" + s.cls + ")";
+    d.appendChild(sw);
+    d.appendChild(document.createTextNode(s.label));
+    legend2.appendChild(d);
+  });
+
+  function draw2(svgId, tipId, field, yMax, yStep) {
+    const svg = document.getElementById(svgId);
+    const tip = document.getElementById(tipId);
+    const L = 44, R = 12, T = 12, B = 40;
+    const W = 440, H = 300;
+    const pw = W - L - R, ph = H - T - B;
+    const sx = v => L + (v / X_MAX) * pw;
+    const sy = v => T + ph - (v / yMax) * ph;
+
+    for (let v = 0; v <= yMax; v += yStep) {
+      svg.appendChild(el("line", { class: "grid-line", x1: L, y1: sy(v), x2: L + pw, y2: sy(v) }));
+      const t = el("text", { class: "tick", x: L - 8, y: sy(v) + 3.5, "text-anchor": "end" });
+      t.textContent = v;
+      svg.appendChild(t);
+    }
+    svg.appendChild(el("line", { class: "axis-line", x1: L, y1: T, x2: L, y2: T + ph }));
+    svg.appendChild(el("line", { class: "axis-line", x1: L, y1: T + ph, x2: L + pw, y2: T + ph }));
+
+    X_TICKS.forEach(v => {
+      const t = el("text", { class: "tick", x: sx(v), y: T + ph + 16, "text-anchor": "middle" });
+      t.textContent = v >= 1024 ? (v / 1024) + "k" : v;
+      svg.appendChild(t);
+    });
+    const ax = el("text", { class: "axis-title", x: L + pw / 2, y: H - 6, "text-anchor": "middle" });
+    ax.textContent = "CONTEXT TOKENS";
+    svg.appendChild(ax);
+    const ay = el("text", { class: "axis-title", x: 0, y: 0, "text-anchor": "middle",
+      transform: "translate(11," + (T + ph / 2) + ") rotate(-90)" });
+    ay.textContent = "TOKENS / SEC";
+    svg.appendChild(ay);
+
+    SERIES2.forEach(s => {
+      svg.appendChild(el("polyline", {
+        class: "line s" + s.cls,
+        points: s[field].map(p => sx(p[0]) + "," + sy(p[1])).join(" ")
+      }));
+    });
+
+    SERIES2.forEach(s => {
+      s[field].forEach(p => {
+        svg.appendChild(el("circle", { class: "dot dot" + s.cls, cx: sx(p[0]), cy: sy(p[1]), r: 4 }));
+        const hit = el("circle", { class: "hit", cx: sx(p[0]), cy: sy(p[1]), r: 13 });
+        const show = () => {
+          tip.innerHTML = "<b>" + s.label + "</b>" + p[1].toFixed(2) + " t/s @ " + p[0].toLocaleString() + " ctx";
+          tip.classList.add("on");
+          const fx = (sx(p[0]) / W) * 100;
+          tip.style.left = "calc(" + fx + "% - " + (fx > 62 ? 150 : -14) + "px)";
+          tip.style.top = ((sy(p[1]) / H) * 100) + "%";
+        };
+        hit.addEventListener("mouseenter", show);
+        hit.addEventListener("focus", show);
+        hit.addEventListener("mouseleave", () => tip.classList.remove("on"));
+        hit.addEventListener("blur", () => tip.classList.remove("on"));
+        hit.setAttribute("tabindex", "0");
+        svg.appendChild(hit);
+      });
+    });
+  }
+
+  draw2("c3", "t3", "pre", 500, 125);
+  draw2("c4", "t4", "gen", 40, 10);
+
   // Table
   const ROWS = [
     ["grp", "V4.1 Q2 streaming — 2048-token increments"],
@@ -449,6 +608,16 @@
     ["d", 16384, 254.84, 17.13, "736.34", 2.2],
     ["d", 24576, 245.05, 16.88, "892.05", 2.3],
     ["d", 32768, 215.36, 16.42, "427.38", 2.6],
+    ["grp", "V4.1 Q2 streaming — 8192-token increments, after rebuild"],
+    ["d", 8192, 428.72, 16.85, "786.12", 1.6],
+    ["d", 16384, 381.39, 18.40, "684.96", 1.5],
+    ["d", 24576, 287.12, 18.80, "787.43", 2.0],
+    ["d", 32768, 302.68, 18.41, "376.27", 1.8],
+    ["grp", "GLM 5.3 Flash Q2 — resident, for contrast"],
+    ["b", 8192, 442.02, 29.87, "99.36", null],
+    ["b", 16384, 381.68, 29.63, "34.59", null],
+    ["b", 24576, 373.58, 29.47, "34.42", null],
+    ["b", 32768, 376.03, 29.31, "34.75", null],
     ["grp", "V4 Flash Q2 — resident baseline"],
     ["b", 2048, 790.18, 40.00, "26.95", null],
     ["b", 8192, 683.85, 37.63, "30.10", null],
