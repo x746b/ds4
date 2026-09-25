@@ -23,7 +23,7 @@ INK = "#14171c"
 MUTED = "#79818f"
 GRID = "#e6e9ee"
 AXIS = "#aab2bd"
-SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
+SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 
 
 def nice_ceil(v):
