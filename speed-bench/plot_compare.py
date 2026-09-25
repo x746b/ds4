@@ -83,12 +83,24 @@ def panel(out, series, labels, idx, y0, y1, x_max, title, unit):
         out.append(f'<polyline class="line" stroke="{SERIES[n]}" points="{pts}"/>')
         for r in rows:
             out.append(f'<circle cx="{sx(r[0]):.1f}" cy="{sy(r[idx]):.1f}" r="5.5" fill="{SERIES[n]}" stroke="#ffffff" stroke-width="2.5"/>')
-        # label the last point in the right margin so identity never rests on
-        # colour alone, and labels cannot collide with each other or the lines
-        last = rows[-1]
+
+    # Label the last point of each series in the right margin, so identity never
+    # rests on colour alone. Series whose final values are close would overprint
+    # each other, so spread them apart vertically first.
+    labels_at = sorted(
+        ((sy(rows[-1][idx]), sx(rows[-1][0]), rows[-1][idx], SERIES[n])
+         for n, rows in enumerate(series)),
+        key=lambda t: t[0],
+    )
+    MIN_GAP = 19.0
+    placed = []
+    for y, x, value, colour in labels_at:
+        if placed and y - placed[-1][0] < MIN_GAP:
+            y = placed[-1][0] + MIN_GAP
+        placed.append((y, x, value, colour))
+    for y, x, value, colour in placed:
         out.append(
-            f'<text class="val" x="{sx(last[0])+14:.1f}" y="{sy(last[idx])+5:.1f}" '
-            f'fill="{SERIES[n]}">{last[idx]:.1f}</text>'
+            f'<text class="val" x="{x+14:.1f}" y="{y+5:.1f}" fill="{colour}">{value:.1f}</text>'
         )
 
 
@@ -131,16 +143,21 @@ def main():
     if args.subtitle:
         out.append(f'<text class="sub" x="{PAD_L}" y="72">{esc(args.subtitle)}</text>')
 
-    lx = PAD_L
+    # Wrap the legend rather than letting entries run off the right edge.
+    lx, ly, rows_used = PAD_L, 95, 1
     for n, lab in enumerate(labels):
-        out.append(f'<rect x="{lx}" y="95" width="26" height="4" rx="2" fill="{SERIES[n]}"/>')
-        out.append(f'<text class="leg" x="{lx+34}" y="103">{esc(lab)}</text>')
-        lx += 34 + len(lab) * 8 + 34
+        entry_w = 34 + len(lab) * 8 + 34
+        if lx > PAD_L and lx + entry_w > W - PAD_R + 34:
+            lx, ly, rows_used = PAD_L, ly + 26, rows_used + 1
+        out.append(f'<rect x="{lx}" y="{ly}" width="26" height="4" rx="2" fill="{SERIES[n]}"/>')
+        out.append(f'<text class="leg" x="{lx+34}" y="{ly+8}">{esc(lab)}</text>')
+        lx += entry_w
 
-    avail = H - PAD_T - PAD_B - PANEL_GAP
+    pad_t = PAD_T + (rows_used - 1) * 26
+    avail = H - pad_t - PAD_B - PANEL_GAP
     ph = avail / 2
-    panel(out, series, labels, 1, PAD_T, PAD_T + ph, x_max, "Prefill", "tokens / sec")
-    top2 = PAD_T + ph + PANEL_GAP
+    panel(out, series, labels, 1, pad_t, pad_t + ph, x_max, "Prefill", "tokens / sec")
+    top2 = pad_t + ph + PANEL_GAP
     panel(out, series, labels, 2, top2, top2 + ph, x_max, "Generation (steady)", "tokens / sec")
 
     out.append(f'<text class="sub" x="{W//2}" y="{H-22}" text-anchor="middle">context tokens</text>')
