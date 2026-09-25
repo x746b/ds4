@@ -209,32 +209,32 @@
 
   <header>
     <p class="eyebrow">DwarfStar · DeepSeek V4.1 Flash Q2 · Apple M5 Max 128 GB</p>
-    <h1>Prefill is bound by chunk fill, not by SSD streaming</h1>
+    <h1>Prefill chunk size is worth 3–4×, and <code>--ctx</code> is what sets it</h1>
     <p class="lede">
-      Streaming a 341 GiB model off SSD looks catastrophic for prompt processing — until the
-      prefill chunks are actually full. The same model, same flags, measured at 2048-token
-      versus 8192-token increments, differs by 3–4× on prefill and not at all on generation.
+      Measuring the same model with the same flags at 2048-token versus 8192-token prefill
+      increments differs by 3–4× on prefill and not at all on generation. The flag that appears
+      to control chunk size does nothing on its own — the context allocation is the real
+      prerequisite.
     </p>
     <div class="meta">
       <span>ds4-bench · Metal</span>
-      <span>expert cache 81.5–86.5 GiB</span>
-      <span>Engram disk-only</span>
       <span>promessi_sposi.txt</span>
-      <span>updated 21 Sep 2026 · rebuild + GLM 5.3</span>
+      <span>single runs unless stated</span>
+      <span>updated 25 Sep 2026</span>
     </div>
   </header>
 
   <div class="finding">
-    <h2>Streaming penalty vs. resident, at 8192 tokens of context</h2>
+    <h2>Independently reproduced</h2>
     <p>
-      Measured against the recorded <code>ds4f-q2</code> resident baseline on the same machine.
-      The prefill penalty collapses from 8.5× to 1.7× purely by filling the chunk — the flag
-      alone does nothing.
+      The model's author re-ran these on the same hardware at a 262K allocation and confirmed
+      both results. Everything on this page is measured; where a claim did not survive a
+      better-controlled test, it is marked as such rather than removed.
     </p>
     <div class="ratios">
-      <div class="ratio r1"><b>8.5×</b><span>prefill · 2048-token increments</span></div>
-      <div class="ratio r2"><b>1.7×</b><span>prefill · 8192-token increments</span></div>
-      <div class="ratio r3"><b>2.2×</b><span>generation · both</span></div>
+      <div class="ratio r2"><b>3–4×</b><span>prefill, 8192 vs 2048 increments · author measured 2.6–4×</span></div>
+      <div class="ratio r3"><b>+5.5%</b><span>decode, after the Engram fix · author, teacher-forced</span></div>
+      <div class="ratio r1"><b>16384</b><span>minimum <code>--ctx</code> for 8192-token chunks · confirmed in source</span></div>
     </div>
   </div>
 
@@ -273,7 +273,7 @@
         <thead>
           <tr>
             <th>Context</th><th>Prefill t/s</th><th>Gen t/s (steady)</th>
-            <th>First token</th><th>vs. resident prefill</th>
+            <th>First token</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -282,38 +282,45 @@
   </section>
 
   <section>
-    <h2>Why the chunk decides it</h2>
+    <h2>What the measurements show</h2>
     <div class="notes">
       <div class="note">
-        <h3>Decode touches 6 experts. Prefill touches all 384.</h3>
+        <h3>The flag is clamped by the context allocation.</h3>
         <p>
-          V4.1 Flash routes 6 of 384 experts per layer per token. A prefill chunk takes the
-          union over every token in it, so a large chunk effectively touches all 384 per layer
-          — all 15,360 expert tensors, about 142 GiB, against an 81.5 GiB cache.
+          <code>--prefill-chunk 8192</code> at <code>--ctx 8257</code> ran at 4096, silently.
+          <code>ds41_prefill_limit()</code> in <code>ds4.c</code> returns 2048 below 8192 ctx,
+          4096 below 16384, and 8192 only at or above that. A control run with and without the
+          flag produced identical results at both allocations. Read directly from source and
+          independently confirmed by the model's author.
         </p>
       </div>
       <div class="note">
-        <h3>That sweep is near-fixed per chunk.</h3>
+        <h3>Prefill cost is linear in the prefix.</h3>
         <p>
-          Its cost barely depends on how many tokens ride along. Amortized over 2048 tokens it
-          is ruinous; over 8192 it is four times cheaper per token. Throughput therefore scales
-          with chunk fill, not with cache size.
+          Seconds per 8192-token chunk against the prefix preceding it: 20.42 s at 0,
+          20.52 s at 8,192, 23.11 s at 16,384, 24.11 s at 24,576. A fixed cost plus a linear
+          term, <code>T ≈ 20.4 + 1.50e-4 × prefix</code>. Extrapolated it predicts ~162 t/s at a
+          200K prefix; the author measured 119–165 t/s across a 262K sweep without having seen
+          this fit. Four points extrapolated 8×, so treat the coefficient loosely.
         </p>
       </div>
       <div class="note">
-        <h3>The flag is clamped by context.</h3>
+        <h3>Incremental prefill rate is not one number.</h3>
         <p>
-          <code>--prefill-chunk 8192</code> at <code>--ctx-max 8192</code> silently ran at 4096:
-          <code>prefill_cap</code> is bound by the context allocation. The control run proves the
-          flag alone changes nothing without the tokens to fill it.
+          It follows from the above: quoting a prefill figure without saying how deep the
+          frontier was is meaningless. The 215–428 t/s measured here and the author's 119–165
+          are both correct — this sweep never went past a 24,576-token prefix, his spent most of
+          its length beyond 100K.
         </p>
       </div>
       <div class="note">
-        <h3>Big prefills poison the decode cache.</h3>
+        <h3>Allocation costs almost nothing.</h3>
         <p>
-          First-token latency after an 8192-token prefill runs 427–905 ms, against 121–148 ms
-          after a 2048-token one. The sweep evicts exactly the hot experts decode wants back.
-          Steady-state generation is unaffected.
+          The same frontiers at <code>--ctx-alloc 262208</code> instead of 32833 gave
+          401/399/354/340 t/s against 429/381/287/303 — no systematic penalty — while the expert
+          cache fell only 2.5%, from 81.51 to 79.51 GiB. Note also how far two runs of nominally
+          the same configuration diverge: up to 23% at one frontier. That is the noise floor for
+          single runs on this machine.
         </p>
       </div>
     </div>
@@ -357,9 +364,10 @@
         <p>
           <code>ds4_engram.c</code> only used its concurrent path above 256 rows, but
           single-token decode asks for 24 rows per table — so it never qualified and paid full
-          random-read latency on every row, in series. The Apple threshold is now 8. The gain
-          grows with context, which fits: longer contexts spend proportionally more time in
-          that per-token path.
+          random-read latency on every row, in series. The Apple threshold is now 8. This is
+          the one result that survived independent checking: the model's author measured
+          <strong>+5.5%</strong> on steady decode with teacher-forced tokens and alternated
+          run order, against the +6–12% from the single runs here.
         </p>
       </div>
       <div class="note">
@@ -406,22 +414,36 @@
     <h2>What this does and doesn't establish</h2>
     <ul>
       <li>
-        The resident baseline is <strong>DeepSeek V4 Flash Q2</strong> (43 layers, 256 experts,
-        81 GiB, no Engram), not V4.1. Active footprint per token is close — ~1.94 GiB vs
-        ~2.22 GiB — so it is a fair proxy, but it is not the same checkpoint.
+        <strong>Single runs, not medians</strong>, except where the author's alternated
+        teacher-forced results are cited. ds4's own methodology asks for alternating repeats
+        before treating a number as a speed result, and the 262K-allocation run showed two
+        nominally identical configurations differing by up to 23% at one frontier.
       </li>
       <li>
-        The 8192-increment run allocated a 32K context, leaving a <strong>smaller</strong> expert
-        cache (81.5 GiB / 8793 experts) than the 2048-increment run (86.5 GiB / 9332). It won by
-        3–4× despite that handicap, which strengthens rather than weakens the result.
+        <strong>The prefill gain from rebuilding is unconfirmed and probably absent.</strong> It
+        came from two single sweeps six days apart; a teacher-forced, alternated, repeated test
+        measured flat. Attributing it to the Metal prefill-tiling commits was inference from
+        commit titles and was never tested.
       </li>
       <li>
-        Single runs, not medians. The docs' own methodology asks for alternating repeats before
-        calling anything a speed result.
+        The <strong>resident baseline is a different checkpoint</strong> — DeepSeek V4 Flash Q2,
+        43 layers, 256 experts, no Engram. Active footprint per token is close (~1.94 vs
+        ~2.22 GiB), so cross-references to it are indicative, not like-for-like. Ratios against
+        it have been removed from this page for that reason.
       </li>
       <li>
-        A live <code>ds4-server</code> reported 216–296 t/s prefill on a 10k prompt at
-        <code>prefill_chunk=8192</code> — independently consistent with the 215–408 t/s measured here.
+        <strong>The linear prefill model is a four-point fit</strong> extrapolated roughly 8×.
+        It predicts the author's independently measured range, which is meaningful, but the
+        coefficient itself should not be quoted precisely.
+      </li>
+      <li>
+        Both models here are <strong>third-party uncensored conversions</strong>, not the
+        official <code>ds41f-q2</code> / <code>glm53-q2</code> downloads, so the figures are not
+        directly comparable to the numbers recorded in ds4's own repository.
+      </li>
+      <li>
+        The GLM and V4.1 figures compare <strong>two tiering strategies on one machine</strong>,
+        not two models on equal terms — 320B resident against 763B streamed.
       </li>
     </ul>
   </section>
@@ -655,7 +677,7 @@
     if (r[0] === "grp") {
       tr.className = "grp";
       const td = document.createElement("td");
-      td.colSpan = 5;
+      td.colSpan = 4;
       td.textContent = r[1];
       tr.appendChild(td);
     } else {
@@ -663,13 +685,12 @@
         r[1].toLocaleString(),
         r[2].toFixed(2),
         r[3].toFixed(2),
-        r[4] + " ms",
-        r[5] === null ? "—" : r[5].toFixed(1) + "×"
+        r[4] + " ms"
       ];
       cells.forEach((c, i) => {
         const td = document.createElement("td");
         td.textContent = c;
-        if (i > 0) td.className = "num" + (i === 4 && r[5] !== null ? " pen" : "");
+        if (i > 0) td.className = "num";
         tr.appendChild(td);
       });
     }
