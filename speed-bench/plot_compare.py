@@ -23,7 +23,7 @@ INK = "#14171c"
 MUTED = "#79818f"
 GRID = "#e6e9ee"
 AXIS = "#aab2bd"
-SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
+SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7"]  # slot 6 is violet, not the palette green: that green sits too close to the aqua in slot 3
 
 
 def nice_ceil(v):
